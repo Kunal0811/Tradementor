@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Setting up custom theme colors for TradeMentor AI using v4 configuration */
+@theme {
+  --color-brand-dark: #0f172a;   /* Deep slate background */
+  --color-brand-card: #1e293b;   /* Lighter slate for cards */
+  --color-brand-accent: #38bdf8; /* Sky blue accents */
+  --color-brand-bull: #10b981;   /* Emerald green for gains */
+  --color-brand-bear: #f43f5e;   /* Rose red for losses */
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-brand-dark);
+  color: #f8fafc;
+  font-family: system-ui, -apple-system, sans-serif;
+}

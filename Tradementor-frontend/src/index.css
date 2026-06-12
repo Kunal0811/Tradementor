@@ -7,6 +7,7 @@
   --color-brand-accent: #38bdf8; /* Sky blue accents */
   --color-brand-bull: #10b981;   /* Emerald green for gains */
   --color-brand-bear: #f43f5e;   /* Rose red for losses */
+  --spacing-drawer: 440px;
 }
 
 body {

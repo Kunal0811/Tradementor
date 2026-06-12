@@ -1,41 +1,11 @@
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useState } from 'react';
-import { LayoutDashboard, BookOpen, LogOut, MessageSquare, TrendingUp, Award, Notebook } from 'lucide-react';
-
-// Temporary fallback features while we establish dashboard components
-const DashboardMock = () => (
-  <div className="space-y-6">
-    <div className="flex justify-between items-center">
-      <h1 className="text-3xl font-bold tracking-tight">Simulator Workstation</h1>
-      <div className="bg-brand-card px-4 py-2 rounded-lg border border-slate-700">
-        <span className="text-sm text-slate-400 mr-2">Virtual Balance:</span>
-        <span className="text-xl font-mono font-bold text-brand-bull">$10,000.00</span>
-      </div>
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div className="bg-brand-card p-6 rounded-xl border border-slate-700 shadow-xl">
-        <h3 className="text-slate-400 font-medium mb-2">Net Profit/Loss</h3>
-        <p className="text-2xl font-mono font-bold text-brand-bull">+$420.69 (4.2%)</p>
-      </div>
-      <div className="bg-brand-card p-6 rounded-xl border border-slate-700 shadow-xl">
-        <h3 className="text-slate-400 font-medium mb-2">Active Positions</h3>
-        <p className="text-2xl font-mono font-bold">3 Stocks Open</p>
-      </div>
-      <div className="bg-brand-card p-6 rounded-xl border border-slate-700 shadow-xl">
-        <h3 className="text-slate-400 font-medium mb-2">Quiz Accuracy</h3>
-        <p className="text-2xl font-mono font-bold text-brand-accent">88% Passing</p>
-      </div>
-    </div>
-  </div>
-);
-
-const LearningMock = () => (
-  <div className="space-y-6">
-    <h1 className="text-3xl font-bold tracking-tight">Learning Modules</h1>
-    <p className="text-slate-400">Select a course module to begin training.</p>
-  </div>
-);
+import { LayoutDashboard, BookOpen, LogOut, TrendingUp, Notebook } from 'lucide-react';
+import SimulatorDashboard from '../components/SimulatorDashboard';
+import AiAssistantDrawer from '../components/AiAssistantDrawer';
+import LearningModule from '../components/LearningModule';
+import TradingJournal from '../components/TradingJournal';
 
 const LoginMock = () => {
   const { login } = useAuth();
@@ -60,7 +30,7 @@ const LoginMock = () => {
                 <input 
                 type="email" 
                 required 
-                autoComplete="username" // <-- Added for standard browser/password manager tracking
+                autoComplete="username" 
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
                 className="w-full bg-brand-dark border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-brand-accent font-sans"
@@ -71,7 +41,7 @@ const LoginMock = () => {
                 <input 
                 type="password" 
                 required 
-                autoComplete="current-password" // <-- Added to fix the DOM warning
+                autoComplete="current-password" 
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
                 className="w-full bg-brand-dark border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-brand-accent font-sans"
@@ -98,6 +68,7 @@ export default function AppRoutes() {
   const navItems = [
     { name: 'Simulator', path: '/', icon: LayoutDashboard },
     { name: 'Learn & Quiz', path: '/learn', icon: BookOpen },
+    { name: 'Trading Journal', path: '/journal', icon: Notebook }
   ];
 
   return (
@@ -106,7 +77,7 @@ export default function AppRoutes() {
       <Route path="/*" element={
         <ProtectedRoute>
           <div className="flex h-screen w-screen overflow-hidden bg-brand-dark text-slate-100">
-            {/* Main Platform Sidebar */}
+            {/* Main Platform Sidebar Layout Shell */}
             <aside className="w-64 bg-brand-card border-r border-slate-800 flex flex-col justify-between p-4 shrink-0">
               <div>
                 <div className="flex items-center gap-2 px-2 py-4 mb-6 border-b border-slate-800">
@@ -132,12 +103,16 @@ export default function AppRoutes() {
               </button>
             </aside>
 
-            {/* Application Main Body Workspace */}
+            {/* Application Main Body Content Window Workspace */}
             <main className="flex-1 overflow-y-auto p-8 relative">
               <Routes>
-                <Route path="/" element={<DashboardMock />} />
-                <Route path="/learn" element={<LearningMock />} />
+                <Route path="/" element={<SimulatorDashboard />} />
+                <Route path="/learn" element={<LearningModule />} />
+                <Route path="/journal" element={<TradingJournal />} />
               </Routes>
+              
+              {/* Floating Global Persistent Coach Assistant Overlay Panel */}
+              <AiAssistantDrawer />
             </main>
           </div>
         </ProtectedRoute>

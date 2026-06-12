@@ -7,34 +7,42 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const email = localStorage.getItem('user_email');
-    if (token && email) {
-      setUser({ email, token });
+    const stored = localStorage.getItem('tm_user');
+    if (stored) {
+      try { setUser(JSON.parse(stored)); } catch {}
     }
     setLoading(false);
   }, []);
 
   const login = async (email, password) => {
-    // Mock login mechanism for client initialization
-    // Once FastAPI is up, replace this with: const res = await api.post('/auth/token', { email, password });
-    const mockToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
-    localStorage.setItem('token', mockToken);
-    localStorage.setItem('user_email', email);
-    setUser({ email, token: mockToken });
+    // Mock auth — replace with FastAPI call when backend is ready
+    const userData = {
+      email,
+      name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      token: btoa(`${email}:${Date.now()}`),
+      joinedAt: new Date().toISOString(),
+      balance: parseFloat(localStorage.getItem('tm_balance') || '10000'),
+    };
+    localStorage.setItem('tm_user', JSON.stringify(userData));
+    setUser(userData);
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user_email');
+    localStorage.removeItem('tm_user');
     setUser(null);
   };
 
+  const updateBalance = (newBalance) => {
+    const updated = { ...user, balance: newBalance };
+    localStorage.setItem('tm_user', JSON.stringify(updated));
+    localStorage.setItem('tm_balance', String(newBalance));
+    setUser(updated);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateBalance }}>
       {!loading && children}
     </AuthContext.Provider>
   );
 };
-
 export const useAuth = () => useContext(AuthContext);

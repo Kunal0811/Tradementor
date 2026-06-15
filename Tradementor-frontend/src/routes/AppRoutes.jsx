@@ -1,37 +1,54 @@
-import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useState } from 'react';
 import { LayoutDashboard, BookOpen, LogOut, TrendingUp, Notebook, Activity,
-         ChevronLeft, ChevronRight, User, UserPlus } from 'lucide-react';
+         ChevronLeft, ChevronRight, User, CheckCircle } from 'lucide-react';
 import SimulatorDashboard from '../components/SimulatorDashboard';
 import AiAssistantDrawer from '../components/AiAssistantDrawer';
 import LearningModule from '../components/LearningModule';
 import TradingJournal from '../components/TradingJournal';
 import Dashboard from '../components/Dashboard';
 
-// ── LOGIN PAGE ────────────────────────────────────────────────────────────────
+// ── AUTH PAGE WITH REDIRECTS & FEEDBACK ─────────────────────────────────────
 const AuthPage = () => {
   const { login, register } = useAuth();
+  const navigate = useNavigate(); // <-- Added for programmatic navigation
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState(''); // <-- Added for registration feedback
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
+
     try {
       if (mode === 'login') {
         await login(form.email, form.password);
+        // Force routing system to push user straight to the workstation dashboard
+        navigate('/dashboard'); 
       } else {
-        if (!form.name.trim()) { setError('Name is required.'); setLoading(false); return; }
+        if (!form.name.trim()) { 
+          setError('Name is required.'); 
+          setLoading(false); 
+          return; 
+        }
         await register(form.name, form.email, form.password);
+        
+        // Show confirmation success notification
+        setSuccessMsg('Account created successfully! Redirecting to dashboard...');
+        
+        // Brief deliberate delay so users can read the success prompt before transition
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 2000);
       }
     } catch (err) {
       const msg = err?.response?.data?.detail || 'Something went wrong. Check your credentials.';
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
-    } finally {
       setLoading(false);
     }
   };
@@ -60,8 +77,8 @@ const AuthPage = () => {
           {/* Mode toggle */}
           <div className="flex bg-brand-surface rounded-xl p-1 border border-brand-border mb-6">
             {[['login','Sign In'],['register','Register']].map(([m,l]) => (
-              <button key={m} type="button" onClick={() => { setMode(m); setError(''); }}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${mode===m ? 'bg-brand-card text-white shadow' : 'text-brand-muted hover:text-white'}`}>
+              <button key={m} type="button" disabled={loading} onClick={() => { setMode(m); setError(''); setSuccessMsg(''); }}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${mode===m ? 'bg-brand-card text-white shadow' : 'text-brand-muted hover:text-white disabled:opacity-50'}`}>
                 {l}
               </button>
             ))}
@@ -71,27 +88,34 @@ const AuthPage = () => {
             {mode === 'register' && (
               <div>
                 <label className="text-xs font-semibold text-brand-muted uppercase tracking-wider block mb-1.5">Full Name</label>
-                <input type="text" required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
+                <input type="text" required disabled={loading} value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
                   placeholder="Kunal Sharma"
-                  className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm" />
+                  className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm disabled:opacity-50" />
               </div>
             )}
             <div>
               <label className="text-xs font-semibold text-brand-muted uppercase tracking-wider block mb-1.5">Email Address</label>
-              <input type="email" required value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
+              <input type="email" required disabled={loading} value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
                 placeholder="you@example.com"
-                className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm" />
+                className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm disabled:opacity-50" />
             </div>
             <div>
               <label className="text-xs font-semibold text-brand-muted uppercase tracking-wider block mb-1.5">Password</label>
-              <input type="password" required minLength={6} value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))}
+              <input type="password" required minLength={6} disabled={loading} value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))}
                 placeholder={mode === 'register' ? 'Min 6 characters' : '••••••••'}
-                className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm" />
+                className="w-full bg-brand-surface border border-brand-border rounded-xl px-4 py-2.5 text-white placeholder-brand-muted focus:outline-none focus:border-brand-accent text-sm disabled:opacity-50" />
             </div>
 
             {error && (
-              <div className="text-xs text-brand-bear bg-brand-bear/10 border border-brand-bear/20 rounded-xl px-3 py-2">
+              <div className="text-xs text-brand-bear bg-brand-bear/10 border border-brand-bear/20 rounded-xl px-3 py-2 fade-in">
                 {error}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="text-xs text-brand-bull bg-brand-bull/10 border border-brand-bull/20 rounded-xl px-3 py-2 flex items-center gap-2 fade-in">
+                <CheckCircle className="w-4 h-4 shrink-0 animate-bounce" />
+                <span>{successMsg}</span>
               </div>
             )}
 

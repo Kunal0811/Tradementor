@@ -27,7 +27,6 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('tm_user');
-    // Clear local caches
     ['tm_positions','tm_trade_history','tm_prices','tm_portfolio'].forEach(k => localStorage.removeItem(k));
     setUser(null);
   };
@@ -37,4 +36,13 @@ export const AuthProvider = ({ children }) => {
       {!loading && children}
     </AuthContext.Provider>
   );
+};
+
+// ADD THIS EXPORT: This is what Dashboard.jsx is looking for
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };

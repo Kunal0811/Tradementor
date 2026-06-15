@@ -10,34 +10,56 @@ router = APIRouter(prefix="/ai", tags=["AI Analysis"])
 
 @router.post("/chat", response_model=schemas.AIChatResponse)
 async def ai_chat(request: schemas.AIChatRequest, current_user: models.User = Depends(get_current_user)):
-    """Direct AI chat endpoint using Google Gemini."""
+    """Direct AI chat endpoint using the modern google-genai SDK."""
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
+        
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=503, detail="Gemini API key not configured.")
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+        # Initialize the new standard client hub
+        client = genai.Client(api_key=api_key)
+        
+        # Format the conversational tracking array into valid type structures
+        formatted_history = []
+        for m in request.history[:-1]:
+            # The modern SDK accepts Content objects containing Part blocks
+            role_tag = "model" if m["role"] == "assistant" else "user"
+            formatted_history.append(
+                types.Content(
+                    role=role_tag,
+                    parts=[types.Part.from_text(text=m["text"])]
+                )
+            )
+
+        # Set up system guidelines using the new GenerateContentConfig schema wrapper
+        config = types.GenerateContentConfig(
             system_instruction=(
                 "You are TradeMentor AI, an expert trading educator. "
                 "Help beginners learn trading concepts, indicators, patterns, risk management, and psychology. "
                 "Be concise, educational, and practical. Never give real financial advice. "
                 "Always note this is a simulation for learning. Keep responses under 200 words."
-            )
+            ),
+            temperature=0.7,
         )
-        chat = model.start_chat(history=[
-            {"role": ("model" if m["role"] == "assistant" else "user"), "parts": [m["text"]]}
-            for m in request.history[:-1]
-        ])
+
+        # Start the chat session using the stable gemini-2.5-flash engine model
+        chat = client.chats.create(
+            model="gemini-2.5-flash",
+            history=formatted_history,
+            config=config
+        )
+        
         response = chat.send_message(request.message)
         return schemas.AIChatResponse(reply=response.text)
 
     except ImportError:
-        raise HTTPException(status_code=503, detail="google-generativeai package not installed.")
+        raise HTTPException(status_code=503, detail="google-genai package not installed in environment.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
 
 @router.post("/analyze-trade", response_model=schemas.AIChatResponse)
 async def analyze_trade(
@@ -47,10 +69,12 @@ async def analyze_trade(
 ):
     """AI analyzes a user's recent trades and provides feedback."""
     try:
-        import google.generativeai as genai
+        from google import genai
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=503, detail="Gemini API key not configured.")
+
+        client = genai.Client(api_key=api_key)
 
         # Fetch user's last 10 trades for context
         trades = db.query(models.Trade).filter(
@@ -89,13 +113,15 @@ Specific trade context: {request.context or 'General analysis requested.'}
 
 Focus on: entry/exit quality, risk management, emotional patterns, and what to improve next."""
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
         return schemas.AIChatResponse(reply=response.text)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
+
 
 @router.get("/recommendations", response_model=schemas.AIChatResponse)
 async def get_learning_recommendations(
@@ -104,10 +130,12 @@ async def get_learning_recommendations(
 ):
     """Generate personalized learning recommendations based on quiz performance."""
     try:
-        import google.generativeai as genai
+        from google import genai
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=503, detail="Gemini API key not configured.")
+
+        client = genai.Client(api_key=api_key)
 
         results = db.query(models.QuizResult).filter(
             models.QuizResult.user_id == current_user.user_id
@@ -125,9 +153,10 @@ async def get_learning_recommendations(
 Based on these results, provide 3 specific personalized learning recommendations. 
 Be encouraging but specific about areas needing improvement. Under 150 words."""
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
         return schemas.AIChatResponse(reply=response.text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")

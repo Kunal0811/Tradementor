@@ -71,14 +71,19 @@ class Trade(Base):
 
 class TradingJournal(Base):
     __tablename__ = "trading_journal"
+
     journal_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    stock_symbol = Column(String(20), nullable=True)
-    outcome = Column(Enum("WIN", "LOSS", "BREAKEVEN", name="outcomes"), default="BREAKEVEN", nullable=False)
-    mistake_tag = Column(String(100), default="NONE", nullable=False)
-    emotion = Column(String(50), nullable=True)
-    entry_price = Column(Float, nullable=True)
-    exit_price = Column(Float, nullable=True)
+    
+    # Missing metrics required by the dashboard analytics queries:
+    stock_symbol = Column(String(20), index=True, nullable=False)
+    outcome = Column(String(20), default="WIN", nullable=False)       # "WIN" or "LOSS"
+    mistake_tag = Column(String(100), default="NONE", nullable=False)  # e.g., "FOMO", "OVER_LEVER"
+    emotion = Column(String(50), nullable=True)                       # e.g., "Greedy", "Fearful"
+    entry_price = Column(Float, default=0.0, nullable=False)
+    exit_price = Column(Float, default=0.0, nullable=False)
+    
     notes = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
     user = relationship("User", back_populates="journals")

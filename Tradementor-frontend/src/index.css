@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "postcss";
 
 @theme {
   --color-brand-dark: #080f1a;

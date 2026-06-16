@@ -8,48 +8,56 @@ import app.schemas as schemas
 
 router = APIRouter(prefix="/trades", tags=["Trading Simulator"])
 
-@router.post("/", response_model=schemas.TradeOut, status_code=status.HTTP_201_CREATED)
-def execute_trade(trade_in: schemas.TradeCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    portfolio = db.query(models.Portfolio).filter(models.Portfolio.user_id == current_user.user_id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found for this user.")
 
-    order_cost = trade_in.execution_price * trade_in.quantity
+def _update_holding(db: Session, user_id: int, symbol: str, qty_delta: int, price: float):
+    """Upserts the holdings table — the single source of truth for open positions."""
+    h = db.query(models.Holding).filter_by(user_id=user_id, symbol=symbol).first()
+    if h is None:
+        if qty_delta > 0:
+            db.add(models.Holding(user_id=user_id, symbol=symbol,
+                                  quantity=qty_delta, average_price=price))
+    else:
+        new_qty = h.quantity + qty_delta
+        if new_qty <= 0:
+            db.delete(h)
+        else:
+            if qty_delta > 0:   # BUY — recalculate weighted avg
+                total_cost = h.average_price * h.quantity + price * qty_delta
+                h.average_price = round(total_cost / new_qty, 4)
+            h.quantity = new_qty
+
+
+@router.post("/", response_model=schemas.TradeOut, status_code=status.HTTP_201_CREATED)
+def execute_trade(trade_in: schemas.TradeCreate, db: Session = Depends(get_db),
+                  current_user: models.User = Depends(get_current_user)):
+    portfolio = db.query(models.Portfolio).filter_by(user_id=current_user.user_id).first()
+    if not portfolio:
+        raise HTTPException(404, "Portfolio not found.")
+
+    order_cost = round(trade_in.execution_price * trade_in.quantity, 2)
+    realized_pnl = 0.0
 
     if trade_in.action_type == "BUY":
         if portfolio.balance < order_cost:
-            raise HTTPException(status_code=400, detail="Insufficient virtual funds.")
+            raise HTTPException(400, "Insufficient virtual funds.")
         portfolio.balance = round(portfolio.balance - order_cost, 2)
+        _update_holding(db, current_user.user_id, trade_in.stock_symbol, trade_in.quantity, trade_in.execution_price)
+        trade_status = "OPEN"
 
     elif trade_in.action_type == "SELL":
-        # Calculate P&L from open BUY trades for this symbol
-        open_buys = db.query(models.Trade).filter(
-            models.Trade.user_id == current_user.user_id,
-            models.Trade.stock_symbol == trade_in.stock_symbol,
-            models.Trade.action_type == "BUY",
-            models.Trade.status == "OPEN"
-        ).all()
-        total_held = sum(t.quantity for t in open_buys)
-        if total_held < trade_in.quantity:
-            raise HTTPException(status_code=400, detail=f"Not enough shares. You hold {total_held}.")
+        holding = db.query(models.Holding).filter_by(
+            user_id=current_user.user_id, symbol=trade_in.stock_symbol).first()
+        if not holding or holding.quantity < trade_in.quantity:
+            held = holding.quantity if holding else 0
+            raise HTTPException(400, f"Not enough shares. You hold {held}.")
 
-        avg_cost = sum(t.execution_price * t.quantity for t in open_buys) / total_held if total_held > 0 else 0
-        pnl = (trade_in.execution_price - avg_cost) * trade_in.quantity
-        portfolio.balance = round(portfolio.balance + order_cost, 2)
-        portfolio.profit_loss = round(portfolio.profit_loss + pnl, 2)
-
-        # Mark BUY trades as CLOSED (FIFO)
-        qty_to_close = trade_in.quantity
-        for buy_trade in sorted(open_buys, key=lambda t: t.trade_date):
-            if qty_to_close <= 0:
-                break
-            if buy_trade.quantity <= qty_to_close:
-                buy_trade.status = "CLOSED"
-                qty_to_close -= buy_trade.quantity
-            else:
-                # Partial close — split not implemented, mark fully
-                buy_trade.status = "CLOSED"
-                qty_to_close = 0
+        realized_pnl = round((trade_in.execution_price - holding.average_price) * trade_in.quantity, 2)
+        portfolio.balance     = round(portfolio.balance + order_cost, 2)
+        portfolio.profit_loss = round(portfolio.profit_loss + realized_pnl, 2)
+        _update_holding(db, current_user.user_id, trade_in.stock_symbol, -trade_in.quantity, trade_in.execution_price)
+        trade_status = "CLOSED"
+    else:
+        raise HTTPException(400, "action_type must be BUY or SELL.")
 
     new_trade = models.Trade(
         user_id=current_user.user_id,
@@ -57,63 +65,73 @@ def execute_trade(trade_in: schemas.TradeCreate, db: Session = Depends(get_db), 
         action_type=trade_in.action_type,
         execution_price=trade_in.execution_price,
         quantity=trade_in.quantity,
-        status="OPEN" if trade_in.action_type == "BUY" else "CLOSED"
+        pnl=realized_pnl,
+        status=trade_status,
     )
     db.add(new_trade)
     db.commit()
     db.refresh(new_trade)
+
+    # Refresh leaderboard entry
+    _refresh_leaderboard(db, current_user)
+
     return new_trade
+
+
+def _refresh_leaderboard(db: Session, user: models.User):
+    trades = db.query(models.Trade).filter_by(user_id=user.user_id).all()
+    sell_trades = [t for t in trades if t.action_type == "SELL"]
+    wins = sum(1 for t in sell_trades if t.pnl > 0)
+    win_rate = round((wins / len(sell_trades)) * 100, 1) if sell_trades else 0
+    portfolio = db.query(models.Portfolio).filter_by(user_id=user.user_id).first()
+    roi = round(((portfolio.profit_loss) / 10000) * 100, 2) if portfolio else 0
+
+    entry = db.query(models.LeaderboardEntry).filter_by(user_id=user.user_id).first()
+    if entry:
+        entry.total_roi    = roi
+        entry.win_rate     = win_rate
+        entry.total_trades = len(trades)
+        entry.user_name    = user.name
+    else:
+        db.add(models.LeaderboardEntry(user_id=user.user_id, user_name=user.name,
+                                       total_roi=roi, win_rate=win_rate, total_trades=len(trades)))
+    db.commit()
+
 
 @router.get("/", response_model=List[schemas.TradeOut])
 def get_my_trades(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return db.query(models.Trade).filter(
-        models.Trade.user_id == current_user.user_id
-    ).order_by(models.Trade.trade_date.desc()).all()
+    return db.query(models.Trade).filter_by(user_id=current_user.user_id)\
+             .order_by(models.Trade.trade_date.desc()).all()
+
 
 @router.get("/portfolio", response_model=schemas.PortfolioOut)
 def get_portfolio(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    portfolio = db.query(models.Portfolio).filter(models.Portfolio.user_id == current_user.user_id).first()
+    portfolio = db.query(models.Portfolio).filter_by(user_id=current_user.user_id).first()
     if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found.")
+        raise HTTPException(404, "Portfolio not found.")
 
-    # Build open positions from OPEN BUY trades
-    open_buys = db.query(models.Trade).filter(
-        models.Trade.user_id == current_user.user_id,
-        models.Trade.action_type == "BUY",
-        models.Trade.status == "OPEN"
-    ).all()
+    holdings = db.query(models.Holding).filter_by(user_id=current_user.user_id).all()
+    positions = [
+        schemas.PositionOut(symbol=h.symbol, shares=h.quantity,
+                            avg_entry=h.average_price,
+                            total_cost=round(h.average_price * h.quantity, 2))
+        for h in holdings if h.quantity > 0
+    ]
+    return schemas.PortfolioOut(portfolio_id=portfolio.portfolio_id,
+                                balance=portfolio.balance,
+                                profit_loss=portfolio.profit_loss,
+                                positions=positions)
 
-    positions_map = {}
-    for t in open_buys:
-        sym = t.stock_symbol
-        if sym not in positions_map:
-            positions_map[sym] = {"symbol": sym, "shares": 0, "total_cost": 0.0}
-        positions_map[sym]["shares"] += t.quantity
-        positions_map[sym]["total_cost"] += t.execution_price * t.quantity
 
-    positions = []
-    for sym, data in positions_map.items():
-        avg_entry = round(data["total_cost"] / data["shares"], 2) if data["shares"] > 0 else 0
-        positions.append(schemas.PositionOut(
-            symbol=sym,
-            shares=data["shares"],
-            avg_entry=avg_entry,
-            total_cost=round(data["total_cost"], 2)
-        ))
-
-    return schemas.PortfolioOut(
-        portfolio_id=portfolio.portfolio_id,
-        balance=portfolio.balance,
-        profit_loss=portfolio.profit_loss,
-        positions=positions
-    )
-
-@router.delete("/reset", status_code=status.HTTP_200_OK)
+@router.delete("/reset", status_code=200)
 def reset_portfolio(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    db.query(models.Trade).filter(models.Trade.user_id == current_user.user_id).delete()
-    portfolio = db.query(models.Portfolio).filter(models.Portfolio.user_id == current_user.user_id).first()
+    db.query(models.Trade).filter_by(user_id=current_user.user_id).delete()
+    db.query(models.Holding).filter_by(user_id=current_user.user_id).delete()
+    portfolio = db.query(models.Portfolio).filter_by(user_id=current_user.user_id).first()
     if portfolio:
-        portfolio.balance = 10000.00
+        portfolio.balance     = 10000.00
         portfolio.profit_loss = 0.00
+    # Remove from leaderboard
+    db.query(models.LeaderboardEntry).filter_by(user_id=current_user.user_id).delete()
     db.commit()
     return {"message": "Portfolio reset to $10,000."}

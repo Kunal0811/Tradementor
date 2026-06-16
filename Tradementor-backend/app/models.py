@@ -1,89 +1,146 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 
 
 class User(Base):
     __tablename__ = "users"
-    user_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(150), unique=True, index=True, nullable=False)
-    password = Column(String(255), nullable=False)
+    user_id    = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name       = Column(String(100), nullable=False)
+    email      = Column(String(150), unique=True, index=True, nullable=False)
+    password   = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    portfolio = relationship("Portfolio", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
-    journals = relationship("TradingJournal", back_populates="user", cascade="all, delete-orphan")
-    quiz_results = relationship("QuizResult", back_populates="user", cascade="all, delete-orphan")
+    portfolio        = relationship("Portfolio",        back_populates="user", uselist=False, cascade="all, delete-orphan")
+    holdings         = relationship("Holding",          back_populates="user", cascade="all, delete-orphan")
+    trades           = relationship("Trade",            back_populates="user", cascade="all, delete-orphan")
+    journals         = relationship("TradingJournal",   back_populates="user", cascade="all, delete-orphan")
+    quiz_results     = relationship("QuizResult",       back_populates="user", cascade="all, delete-orphan")
+    learning_progress= relationship("LearningProgress", back_populates="user", cascade="all, delete-orphan")
+    ai_chats         = relationship("AIChat",           back_populates="user", cascade="all, delete-orphan")
 
 
 class Course(Base):
     __tablename__ = "courses"
-    course_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    title = Column(String(200), nullable=False)
+    course_id   = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title       = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    quizzes = relationship("Quiz", back_populates="course", cascade="all, delete-orphan")
+    order_index = Column(Integer, default=0)
+    quizzes     = relationship("Quiz",            back_populates="course", cascade="all, delete-orphan")
+    progress    = relationship("LearningProgress",back_populates="course", cascade="all, delete-orphan")
 
 
 class Quiz(Base):
     __tablename__ = "quizzes"
-    quiz_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    course_id = Column(Integer, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
-    question = Column(Text, nullable=False)
-    answer = Column(String(255), nullable=False)
-    course = relationship("Course", back_populates="quizzes")
-    results = relationship("QuizResult", back_populates="quiz", cascade="all, delete-orphan")
+    quiz_id    = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    course_id  = Column(Integer, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    question   = Column(Text, nullable=False)
+    options    = Column(Text, nullable=False)   # JSON string: ["opt0","opt1","opt2"]
+    answer     = Column(Integer, nullable=False) # index of correct option
+    explanation= Column(Text, nullable=True)
+    course     = relationship("Course",     back_populates="quizzes")
+    results    = relationship("QuizResult", back_populates="quiz", cascade="all, delete-orphan")
 
 
 class QuizResult(Base):
     __tablename__ = "quiz_results"
-    result_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id", ondelete="CASCADE"), nullable=False)
-    score = Column(Integer, nullable=False)
+    result_id    = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id      = Column(Integer, ForeignKey("users.user_id",   ondelete="CASCADE"), nullable=False)
+    quiz_id      = Column(Integer, ForeignKey("quizzes.quiz_id", ondelete="CASCADE"), nullable=False)
+    course_id    = Column(Integer, ForeignKey("courses.course_id",ondelete="CASCADE"), nullable=False)
+    score        = Column(Integer, nullable=False)
+    total        = Column(Integer, nullable=False, default=3)
+    passed       = Column(Boolean, default=False)
     evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)
-    user = relationship("User", back_populates="quiz_results")
-    quiz = relationship("Quiz", back_populates="results")
+    user  = relationship("User",  back_populates="quiz_results")
+    quiz  = relationship("Quiz",  back_populates="results")
+
+
+# NEW: tracks reading completion per course
+class LearningProgress(Base):
+    __tablename__ = "learning_progress"
+    id                    = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id               = Column(Integer, ForeignKey("users.user_id",    ondelete="CASCADE"), nullable=False)
+    course_id             = Column(Integer, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    completion_percentage = Column(Integer, default=0)
+    reading_done          = Column(Boolean, default=False)
+    last_accessed         = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    user   = relationship("User",   back_populates="learning_progress")
+    course = relationship("Course", back_populates="progress")
 
 
 class Portfolio(Base):
     __tablename__ = "portfolios"
     portfolio_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), unique=True, nullable=False)
-    balance = Column(Float, default=10000.00, nullable=False)
-    profit_loss = Column(Float, default=0.00, nullable=False)
-    user = relationship("User", back_populates="portfolio")
+    user_id      = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), unique=True, nullable=False)
+    balance      = Column(Float, default=10000.00, nullable=False)
+    profit_loss  = Column(Float, default=0.00,     nullable=False)
+    user         = relationship("User", back_populates="portfolio")
+
+
+# NEW: persistent holdings table (per proposal)
+class Holding(Base):
+    __tablename__ = "holdings"
+    id            = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id       = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    symbol        = Column(String(20), index=True, nullable=False)
+    quantity      = Column(Integer, default=0, nullable=False)
+    average_price = Column(Float,   default=0.0, nullable=False)
+    user          = relationship("User", back_populates="holdings")
 
 
 class Trade(Base):
     __tablename__ = "trades"
-    trade_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    stock_symbol = Column(String(20), index=True, nullable=False)
-    action_type = Column(Enum("BUY", "SELL", name="action_types"), nullable=False)
+    trade_id        = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id         = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    stock_symbol    = Column(String(20), index=True, nullable=False)
+    action_type     = Column(Enum("BUY", "SELL", name="action_types"), nullable=False)
     execution_price = Column(Float, nullable=False)
-    quantity = Column(Integer, nullable=False)
-    status = Column(Enum("OPEN", "CLOSED", name="position_statuses"), default="OPEN", nullable=False)
-    trade_date = Column(DateTime, default=datetime.datetime.utcnow)
-    user = relationship("User", back_populates="trades")
+    quantity        = Column(Integer, nullable=False)
+    pnl             = Column(Float, default=0.0)  # realized pnl for SELL trades
+    status          = Column(Enum("OPEN", "CLOSED", name="position_statuses"), default="OPEN", nullable=False)
+    trade_date      = Column(DateTime, default=datetime.datetime.utcnow)
+    user            = relationship("User", back_populates="trades")
 
 
 class TradingJournal(Base):
     __tablename__ = "trading_journal"
+    journal_id  = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id     = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    stock_symbol= Column(String(20), nullable=True)
+    outcome     = Column(Enum("WIN", "LOSS", "BREAKEVEN", name="outcomes"), default="BREAKEVEN", nullable=False)
+    mistake_tag = Column(String(100), default="NONE",    nullable=False)
+    emotion     = Column(String(50),  nullable=True)
+    entry_price = Column(Float, nullable=True)
+    exit_price  = Column(Float, nullable=True)
+    # Psychology analyzer fields (per proposal)
+    entry_reason    = Column(Text, nullable=True)   # "Why did you enter?"
+    followed_plan   = Column(Boolean, default=True) # "Did you follow your plan?"
+    psychology_note = Column(Text, nullable=True)   # AI-detected pattern
+    notes       = Column(Text, nullable=False)
+    created_at  = Column(DateTime, default=datetime.datetime.utcnow)
+    user        = relationship("User", back_populates="journals")
 
-    journal_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    
-    # Missing metrics required by the dashboard analytics queries:
-    stock_symbol = Column(String(20), index=True, nullable=False)
-    outcome = Column(String(20), default="WIN", nullable=False)       # "WIN" or "LOSS"
-    mistake_tag = Column(String(100), default="NONE", nullable=False)  # e.g., "FOMO", "OVER_LEVER"
-    emotion = Column(String(50), nullable=True)                       # e.g., "Greedy", "Fearful"
-    entry_price = Column(Float, default=0.0, nullable=False)
-    exit_price = Column(Float, default=0.0, nullable=False)
-    
-    notes = Column(Text, nullable=False)
+
+# NEW: stores AI chat history per user (per proposal)
+class AIChat(Base):
+    __tablename__ = "ai_chats"
+    id         = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id    = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    question   = Column(Text, nullable=False)
+    response   = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    user       = relationship("User", back_populates="ai_chats")
 
-    user = relationship("User", back_populates="journals")
+
+# NEW: leaderboard snapshot (per proposal)
+class LeaderboardEntry(Base):
+    __tablename__ = "leaderboard"
+    id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id     = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    user_name   = Column(String(100), nullable=False)
+    total_roi   = Column(Float, default=0.0)
+    win_rate    = Column(Float, default=0.0)
+    total_trades= Column(Integer, default=0)
+    updated_at  = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
